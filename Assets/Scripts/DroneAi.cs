@@ -7,39 +7,52 @@ public class DroneAi : MonoBehaviour
     private GameObject target;
     public GameObject patrolPosition;
 
-    [SerializeField]
-    private float moveSpeed = 250;
-    [SerializeField]
-    private float minDistance = 50.0f;
-    [SerializeField]
-    private float maxDistance = 100.0f; 
-    [SerializeField]
-    private float rotationDrag = 0.75f;
-    [SerializeField]
-    private bool canAttack = true;
-    [SerializeField]
+    public float speed = 5;
+
+    public float gravity;
+
+    public float minDistance = 15.0f;
+
+    public float maxDistance = 20.0f;
+
+    public float rotationDrag = 100.0f;
+
+    public float roationSpeed = 0.75f;
+
+    public float minAvoidanceDistance = 0.5f;
+
+    public float avoidanceForce;
+
     private float brakeForce = 5f;
 
-    public LayerMask layer;
+    private bool canAttack = true;
+
+    public LayerMask playerLayer;
+    public LayerMask obsticleLayer;
 
     private bool isAttacking = false;
+    private bool isGrounded;
+
+    public float groundCheckLength;
+    public LayerMask groundLayer;
     private Vector3 direction;
     private float distance = 0.0f;
 
     Rigidbody rb;
     Vector2 input;
 
-    public enum CurrentState { Idle, Following, Attacking, Seeking };
-    public CurrentState currentState;
+    public enum CurrentState { Idle, Following, Attacking, Seeking, Falling };
+    private CurrentState currentState;
+
     public bool debugGizmo = true;
 
     public float DistanceToPlayer { get { return distance; } }
 
-
-    void Start()
+    private void Start()
     {
         currentState = CurrentState.Idle;
         isAttacking = false;
+        Random.InitState(Random.Range(0, 200));
     }
 
     private void Awake()
@@ -49,41 +62,35 @@ public class DroneAi : MonoBehaviour
 
     void Update()
     {
-       // float horizontal = Input.GetAxis("Horizontal");
-        //float vertical = Input.GetAxis("Vertical");
+        Ray groundRay = new Ray(transform.position, Vector3.down); // sets the isGrounded bool to true if raycast hits ground layer
+        isGrounded = Physics.Raycast(groundRay, groundCheckLength, groundLayer);
 
-        input = new Vector3();
-        // input.x = horizontal;
-        //input.y = vertical;
-
-        //Find the distance to the player
-     
-
+        if (!isGrounded)
+        {
+            currentState = CurrentState.Falling;
+        }
+        else
+        {
+            if (currentState == CurrentState.Falling) // sets enemy state to idle if the enemy state is falling
+            {
+                currentState = CurrentState.Idle;     
+            }
+                
+        }
     }
 
     private void FixedUpdate()
     {
-        //If the player is in range move towards
-        if (distance > minDistance && distance < maxDistance)
+        StateMachine();     // ensures that the enemy is calling and Using StateMachine function
+
+        if (canAttack)
         {
-            currentState = CurrentState.Following;
+            currentState = CurrentState.Attacking;
         }
-
-        else if (distance <= minDistance && distance > 0.5 )
-        {
-            currentState = CurrentState.Idle;
-
-            if (canAttack)
-            {
-                currentState = CurrentState.Attacking;
-            }
-        }
-
-        StateMachine();
     }
 
 
-    void StateMachine()
+    void StateMachine() //checks enemy's STATES
     {
         if (currentState == CurrentState.Following)
         {
@@ -97,70 +104,87 @@ public class DroneAi : MonoBehaviour
         {
             SeekHandler();
         }
-        else if (currentState == CurrentState.Attacking)
+        else if (currentState == CurrentState.Attacking) //returns attackings
         {
-
+            currentState = CurrentState.Idle; 
+        }
+        else if (currentState == CurrentState.Falling)
+        {
+            GravityHandler();
         }
     }
 
-    void MovementHandler()
+    void MovementHandler() // handles enemy movements
     {
         rb.rotation = Quaternion.LookRotation(direction, Vector3.up);
         rb.angularDrag = rotationDrag;
 
-        // Calculate horizontal movement
-        //Vector3 movement = Vector3.right * moveSpeed * Time.fixedDeltaTime;
-        Vector3 movement = transform.forward * moveSpeed * Time.fixedDeltaTime;
-        movement.y = 0.0f;
-        Vector3 targetPosition = rb.position + movement;
+        Vector3 movement = transform.forward * speed * Time.fixedDeltaTime; //lets the enemy move forward
+        movement.y = 0.0f; // has the the movement vector for the y-axis to 0 so it dosent constantly drag
+        Vector3 targetPos = rb.position + movement; //moves towards targeted gameobject's position
 
-        rb.MovePosition(targetPosition);
+        RaycastHit obsticleAvoidHit; 
+
+        if (Physics.Raycast(transform.position, transform.forward, out obsticleAvoidHit, minAvoidanceDistance, obsticleLayer))
+        {
+          /*  Vector3 hit = obsticleAvoidHit.normal;
+            hit.y = 0.0f;
+          */
+        }
+
+        rb.MovePosition(targetPos); // updates and moves to target
+
+        if (Vector3.Distance(transform.position, target.transform.position) <= minDistance) // checks if target is in minimum distance from enemy
+        {
+            target = null;
+            currentState = CurrentState.Idle; 
+        }
     }
 
-    void SeekHandler()
+    void SeekHandler() //handles enemy seeks
     {
         if (target)
         {
-            distance = Vector3.Distance(target.transform.position, this.transform.position);
-
-            //Face the drone to the player
+            //Face enemy to the player
             direction = (target.transform.position - this.transform.position);
             direction.Normalize();
             currentState = CurrentState.Following;
         }
         if (!target)
         {
-            RaycastHit hit;
-            Physics.SphereCast(transform.position, maxDistance, transform.forward, out hit, layer);
-            Collider colliders = hit.collider;
-            if (colliders)
+            SeekRotate();
+            Collider[] colliders = Physics.OverlapSphere(transform.position, maxDistance, playerLayer); //if player overlaps sphere range 
+            if (colliders.Length >= 1)
             {
-                target = colliders.gameObject;
+                target = colliders[0].gameObject;
             }
             else
             {
+                patrolPosition.transform.parent = gameObject.transform;
                 Vector3 position = new Vector3(Random.Range(-maxDistance, maxDistance), transform.position.y, Random.Range(-maxDistance, maxDistance));
                 patrolPosition.transform.position = position;
-                target = patrolPosition; 
+                patrolPosition.transform.parent = null;
+                target = patrolPosition;
             }
         }
     }
-
-   /* private void DroneStopsMoving()
+    void GravityHandler()
     {
-        isAttacking = false;
-        rb.drag = (brakeForce);
+        Vector3 vertical = Vector3.zero;
+        vertical.y -= gravity * Time.fixedDeltaTime;
+
+        Vector3 targetPosition = rb.position += vertical;
+
+        rb.MovePosition(targetPosition);
     }
 
-    private void DroneMovesToPlayer()
+    void SeekRotate()
     {
-        isAttacking = true;
-        rb.AddRelativeForce(Vector3.forward * moveSpeed * Time.deltaTime);
+        transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.Euler(0, roationSpeed, 0), Time.deltaTime);
     }
-   */
+
     private void OnDrawGizmosSelected()
     {
-
         if (debugGizmo)
         {
             Gizmos.color = Color.green;
@@ -168,6 +192,13 @@ public class DroneAi : MonoBehaviour
 
             Gizmos.color = Color.red;
             Gizmos.DrawWireSphere(this.transform.position, minDistance);
+
+            Gizmos.color = Color.white;
+            Gizmos.DrawLine(transform.position, new Vector3(transform.position.x, transform.position.y - groundCheckLength, transform.position.z));
+
+            Gizmos.color = Color.blue;
+            Gizmos.DrawLine(transform.position, transform.position + new Vector3(0, 0, minAvoidanceDistance));
         }
     }
+
 }

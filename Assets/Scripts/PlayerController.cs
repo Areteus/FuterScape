@@ -4,45 +4,48 @@ using UnityEngine;
 
 public class PlayerController : MonoBehaviour
 {
-    public float speed = 5f;
-    public float jumpHeight = 2f;
-    public float groundDistance = 0.2f;
+    public float Speed = 5f;
+    public float JumpHeight = 2f;
+    public float GroundDistance = 0.2f;
     public float DashDistance = 5f;
     public LayerMask Ground;
 
-    private Rigidbody rb;
-    private Vector3 inputs = Vector3.zero;
-    public bool isGrounded = true;
+    private Rigidbody _body;
+    private Vector3 _inputs = Vector3.zero;
+    private bool _isGrounded = true;
+    private Transform _groundChecker;
 
-
-    private void Start()
+    void Start()
     {
-        rb = GetComponent<Rigidbody>();
-        rb.isKinematic = true;
+        _body = GetComponent<Rigidbody>();
+        _groundChecker = transform.GetChild(0);
     }
 
-    private void Update()
+    void Update()
     {
-        Physics.Raycast(transform.position, Vector3.down, groundDistance, Ground);
+        _isGrounded = Physics.CheckSphere(_groundChecker.position, GroundDistance, Ground, QueryTriggerInteraction.Ignore);
 
-        inputs = Vector3.zero;
-        inputs.x = Input.GetAxis("Horizontal");
-        inputs.y = Input.GetAxis("Vertical");
 
-        if (Input.GetButtonDown("Jump") && isGrounded)
+        _inputs = Vector3.zero;
+        _inputs.x = Input.GetAxis("Horizontal");
+        _inputs.z = Input.GetAxis("Vertical");
+        if (_inputs != Vector3.zero)
+            transform.forward = _inputs;
+
+        if (Input.GetButtonDown("Jump") && _isGrounded)
         {
-            rb.AddForce(Vector3.up * Mathf.Sqrt(jumpHeight * -2f * Physics.gravity.y), ForceMode.VelocityChange);
-        }    
-
-        if (Input.GetKeyDown(KeyCode.LeftShift))
+            _body.AddForce(Vector3.up * Mathf.Sqrt(JumpHeight * -2f * Physics.gravity.y), ForceMode.VelocityChange);
+        }
+        if (Input.GetButtonDown("Dash"))
         {
-            Vector3 dashVelocity = Vector3.Scale(transform.forward, DashDistance * new Vector3((Mathf.Log(1f / (Time.deltaTime * rb.drag + 1)) / -Time.deltaTime), 0, (Mathf.Log(1f / (Time.deltaTime * rb.drag + 1)) / -Time.deltaTime)));
-            rb.AddForce(dashVelocity, ForceMode.VelocityChange);
+            Vector3 dashVelocity = Vector3.Scale(transform.forward, DashDistance * new Vector3((Mathf.Log(1f / (Time.deltaTime * _body.drag + 1)) / -Time.deltaTime), 0, (Mathf.Log(1f / (Time.deltaTime * _body.drag + 1)) / -Time.deltaTime)));
+            _body.AddForce(dashVelocity, ForceMode.VelocityChange);
         }
     }
 
-    private void FixedUpdate()
+
+    void FixedUpdate()
     {
-        rb.MovePosition(rb.position + inputs * speed * Time.fixedDeltaTime);
+        _body.MovePosition(_body.position + _inputs * Speed * Time.fixedDeltaTime);
     }
 }
