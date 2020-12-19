@@ -4,68 +4,65 @@ using UnityEngine;
 
 public class EnemyAi : MonoBehaviour
 {
-    #region Variables
-    private GameObject target;
-    public GameObject patrolPosition;
+    private GameObject target; // finds player target
+    public GameObject patrolPosition; // finds patrol target 
 
     [SerializeField]
     private float moveSpeed = 5;
 
-    Vector3 _movement;
-    Vector3 _verticalVector;
+    Vector3 movementVector; // Enemy vector of drone
+    Vector3 verticalVector; // vertical Vector for enemy
 
     [SerializeField]
-    private float gravityRate;
-
+    private float gravityRate; //gravity flaot for drone
     [SerializeField]
-    private float minDistance = 50.0f;
-
+    private float minDistance = 50.0f; // minmiumm distance between drone and partol position
     [SerializeField]
-    private float maxDistance = 100.0f;
-
+    private float maxDistance = 100.0f; // minmiumm distance between drone and partol position
     [SerializeField]
-    private float rotationDrag = 0.75f;
-
+    private float rotationDrag = 0.75f; // rotation drag for drone
     [SerializeField]
-    private float rotationSpeed = 0.75f;
-
+    private float rotationSpeed = 0.75f; // rotation speed for drone
     [SerializeField]
-    private float minimumAvoidanceDistance = 0.5f;
-
+    private float minimumAvoidanceDistance = 20.0f; //avoidance distance for obsticles
     [SerializeField]
-    private float avoidanceForce;
-
+    private float avoidanceForce; // force for avoidance
     [SerializeField]
-    private bool canAttack = true;
-
+    private float toleranceRadius = 3.0f; // avoidance tolerance
     [SerializeField]
-    private float brakeForce = 5f;
+    private bool canAttack = true; // can attack booleon
+    [SerializeField]
+    private float brakeForce = 5f; //drone brakes
 
-    public LayerMask playerLayer;
-    public LayerMask obstacleLayer;
+    public LayerMask playerLayer; // gets playerLayer
+    public LayerMask obstacleLayer; // gets ObsticleLayer
 
     private bool isAttacking = false;
-    private bool _isGrounded;
-    public float groundCheckLength;
-    public LayerMask groundLayer;
-    private Vector3 direction;
+    //groundCheck
+    private bool isGrounded; //checks if drone is grounded
+    public float groundCheckLength; // get groundCheckLength
+    public LayerMask groundLayer; // gets groundLayer
+
+    private Vector3 direction; //direction of drone
+    private Vector3 targetPoint; 
     private float distance = 0.0f;
 
-    Rigidbody rb;
-    Vector2 input;
+    Rigidbody rb; //rb
+    //Vector2 input;
 
-    public enum enemyState { Idle, Following, Attacking, Seeking, Falling };
-    private enemyState _curState;
-    public bool isDebugging = true;
+    Grid grid; 
+
+    public enum CurrentState { Idle, Following, Attacking, Seeking, Falling }; //drone current states 
+    private CurrentState currentState; // setting currentState
 
     public float DistanceToPlayer { get { return distance; } }
-    #endregion
 
     void Start()
     {
-        _curState = enemyState.Idle;
-        isAttacking = false;
+        currentState = CurrentState.Idle;
         Random.InitState(Random.Range(0, 200));
+        targetPoint = Vector3.zero;
+
     }
 
     private void Awake()
@@ -75,116 +72,109 @@ public class EnemyAi : MonoBehaviour
 
     void Update()
     {
-        // Sets _isGrounded Boolean to true if raycast hits a surface on the ground layer
+        // Sets isGrounded bool to true if raycast hits a surface on the ground layer
         Ray groundingRay = new Ray(transform.position, Vector3.down);
-        _isGrounded = Physics.Raycast(groundingRay, groundCheckLength, groundLayer);
+        isGrounded = Physics.Raycast(groundingRay, groundCheckLength, groundLayer);
 
-        if (!_isGrounded)
+        if (!isGrounded) // if its not grounded
         {
-            _curState = enemyState.Falling;
+            currentState = CurrentState.Falling; //set the current state to falling
         }
         else
         {
-            if (_curState == enemyState.Falling)
-                _curState = enemyState.Idle;
+            if (currentState == CurrentState.Falling) 
+                currentState = CurrentState.Idle; //set the current state to idle
         }
     }
 
     private void FixedUpdate()
     {
-        StateMachine();
-
+        StateMachine(); //call state machine every fixed update
     }
         
-    void StateMachine()
+    void StateMachine() //statemachine 
     {
-        switch (_curState)
+        switch (currentState) //execute current state
         {
-            case enemyState.Following:
-                MovementHandler();
+            case CurrentState.Following:
+                Movement();
                 return;
 
-            case enemyState.Idle:
-                _curState = enemyState.Seeking;
+            case CurrentState.Idle: //idle
+                currentState = CurrentState.Seeking; //when in idle start seeking
                 return;
 
-            case enemyState.Seeking:
-                SeekHandler();
+            case CurrentState.Seeking: //Seeking
+                Seek(); // when in seeking call and run seek
                 return;
 
-            case enemyState.Attacking:
+            case CurrentState.Attacking: // Attacking
+                currentState = CurrentState.Idle; //after attack return to idle or player left zone
                 return;
 
-            case enemyState.Falling:
-                GravityHandler();
+            case CurrentState.Falling: //falling
+                GravityHandle(); //call and run gravity
                 return;
         }
     }
 
-    void MovementHandler()
+    void Movement() //enemy movement
     {
-        rb.rotation = Quaternion.LookRotation(direction, Vector3.up);
+        rb.rotation = Quaternion.LookRotation(direction, Vector3.up); //rotations
         rb.angularDrag = rotationDrag;
 
-        _movement = transform.forward * moveSpeed * Time.fixedDeltaTime;
-        _movement.y = 0.0f;
-        Vector3 targetPosition = rb.position + _movement;
+        movementVector = transform.forward * moveSpeed * Time.fixedDeltaTime;
+        movementVector.y = 0.0f;
+        Vector3 targetPosition = rb.position + movementVector;
 
-        RaycastHit avoidanceHit;
-        //Check that the agent hit with the obstacles within it's minimum distance to avoid
-        if (Physics.Raycast(transform.position, transform.forward, out avoidanceHit, minimumAvoidanceDistance, obstacleLayer))
+        rb.MovePosition(targetPosition); //moving object
+                                                                        
+        if (Vector3.Distance(transform.position, target.transform.position) <= minDistance) // if distance of drones and targets is less then or equal to minDistance
         {
-            //Get the normal of the hit point to calculate the new direction
-            Vector3 hitNormal = avoidanceHit.normal;
-            hitNormal.y = 0.0f; //Don't want to move in Y-Space
-
-            //Get the new direction vector by adding force to agent's current forward vector
-            direction = transform.forward + hitNormal * avoidanceForce;
+            target = null; //return            
+            currentState = CurrentState.Attacking; // switch to attacking
         }
-
-        rb.MovePosition(targetPosition);
-
-        if (Vector3.Distance(transform.position, target.transform.position) <= minDistance)
+        else if (Vector3.Distance(transform.position, target.transform.position) >= maxDistance) // if distance of drones and targets is greater then or equal to minDistance
         {
-            target = null;
-            _curState = enemyState.Idle;
+            target = null; //return
+            currentState = CurrentState.Seeking; // seek
         }
     }
 
-    void SeekHandler()
+    void Seek() //seek functions
     {
-        if (target)
+        if (target) // if drone finds target
         {
             //Face the drone to the player
             direction = (target.transform.position - this.transform.position);
             direction.Normalize();
-            _curState = enemyState.Following;
+            currentState = CurrentState.Following; //set state to following
         }
-        if (!target)
+        if (!target) // if its not the target 
         {
-            SeekRotate();
-            Collider[] colliders = Physics.OverlapSphere(transform.position, maxDistance, playerLayer);
-            if (colliders.Length >= 1)
+            SeekRotate(); //rotate
+            Collider[] colliders = Physics.OverlapSphere(transform.position, maxDistance, playerLayer); //detects multiple objects with sphere and checks if they have the playerLayer
+            if (colliders.Length >= 1) //colliders array length greater than equal to one
             {
                 target = colliders[0].gameObject;
             }
             else
             {
                 patrolPosition.transform.parent = gameObject.transform;
-                Vector3 position = new Vector3(Random.Range(-maxDistance, maxDistance), transform.position.y, Random.Range(-maxDistance, maxDistance));
+                Vector3 position = new Vector3(Random.Range(-maxDistance, maxDistance), transform.position.y, Random.Range(-maxDistance, maxDistance)); //changes patrol position in diffrent random positions
                 patrolPosition.transform.position = position;
                 patrolPosition.transform.parent = null;
                 target = patrolPosition;
             }
         }
     }
-
-    void GravityHandler()
+    
+    void GravityHandle() // handles gravity 
     {
-        _verticalVector = Vector3.zero;
-        _verticalVector.y -= gravityRate * Time.fixedDeltaTime;
+        verticalVector = Vector3.zero;
+        verticalVector.y -= gravityRate * Time.fixedDeltaTime;
 
-        Vector3 targetPosition = rb.position += _verticalVector;
+        Vector3 targetPosition = rb.position += verticalVector;
 
         rb.MovePosition(targetPosition);
     }
@@ -196,19 +186,17 @@ public class EnemyAi : MonoBehaviour
 
     private void OnDrawGizmosSelected()
     {
-        if (isDebugging)
-        {
-            Gizmos.color = Color.green;
-            Gizmos.DrawWireSphere(this.transform.position, maxDistance);
+        Gizmos.color = Color.green;
+        Gizmos.DrawWireSphere(this.transform.position, maxDistance);
 
-            Gizmos.color = Color.red;
-            Gizmos.DrawWireSphere(this.transform.position, minDistance);
+        Gizmos.color = Color.red;
+        Gizmos.DrawWireSphere(this.transform.position, minDistance);
 
-            Gizmos.color = Color.red;
-            Gizmos.DrawLine(transform.position, new Vector3(transform.position.x, transform.position.y - groundCheckLength, transform.position.z));
+        Gizmos.color = Color.red;
+        Gizmos.DrawLine(transform.position, new Vector3(transform.position.x, transform.position.y - groundCheckLength, transform.position.z));
 
-            Gizmos.color = Color.blue;
-            Gizmos.DrawLine(transform.position, transform.position + new Vector3(0, 0, minimumAvoidanceDistance));
-        }
+        Gizmos.color = Color.blue;
+        Gizmos.DrawLine(transform.position, transform.position + new Vector3(0, 0, minimumAvoidanceDistance));
     }
+
 }

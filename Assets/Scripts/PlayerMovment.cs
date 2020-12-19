@@ -1,9 +1,8 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEditor;
 
-public class KinematicInput : MonoBehaviour
+public class PlayerMovment : MonoBehaviour
 {
     // Horizontal movement parameters
     public float speed = 10.0f;
@@ -12,7 +11,7 @@ public class KinematicInput : MonoBehaviour
     public float maxJumpSpeed = 1.5f;
     public float maxFallSpeed = -2.2f;
     public float timeToMaxJumpSpeed = 0.2f;
-    public float deccelerationDuration = 0.0f;
+    //public float deccelerationDuration = 0.0f;
     public float maxJumpDuration = 1.2f;
 
     // Jump and Fall helpers
@@ -23,10 +22,20 @@ public class KinematicInput : MonoBehaviour
     float currentJumpDuration = 0.0f;
     public float gravityAcceleration = -9.8f;
     public float groundSearchLength = 0.6f;
-    public LayerMask groundMask; 
-
+    public LayerMask groundMask;
+    private float targetHeight;
+    private Vector3 targetPosition;
+    Vector3 movement;
     // Rotation Parameters
     float angleDifferenceForward = 0.0f;
+
+    //formula break down for dash F = a*t + 1/2 gt^2
+    public float Force = 5.0f;
+    public float drag;
+    public float timePass = 0.0f;
+    private Vector3 forceVector;
+    //dash helpers 
+    public bool dash;
 
     // Components and helpers
     Rigidbody rigidBody;
@@ -34,10 +43,19 @@ public class KinematicInput : MonoBehaviour
     Vector3 playerSize;
 
     // Debug configuration
-    public GUIStyle myGUIStyle;
-
+    //public GUIStyle myGUIStyle
     //UI
-    public GameObject textPanel;
+    //public GameObject textPanel;
+
+    //easeFunction handler
+    public EasingFunctions.easingFunctionList currentEasingFunc = EasingFunctions.easingFunctionList.Quadratic_InOut;
+    public GameObject StartObj;
+    public GameObject EndObj;
+    public float LERPDuration = 0;
+
+    private Vector3 startPos;
+    private Vector3 endPos;
+    private float accumulatedTimeSinceLERPStart;
 
     void Awake()
     {
@@ -51,8 +69,20 @@ public class KinematicInput : MonoBehaviour
         jumpRelease = false;
         isMovingUp = false;
         isFalling = false;
+        //Force = 0f;
 
-        textPanel.SetActive(false);
+        if (StartObj != null)
+        {
+            startPos = StartObj.transform.position;
+        }
+
+        if (EndObj != null)
+        {
+            endPos = EndObj.transform.position;
+        }
+        accumulatedTimeSinceLERPStart = 0.0f;
+
+        //textPanel.SetActive(false);
     }
 
     void Update()
@@ -63,6 +93,31 @@ public class KinematicInput : MonoBehaviour
         input = new Vector2();
         input.x = horizontal;
         input.y = vertical;
+
+      
+        if (Input.GetKey(KeyCode.Q))
+        {
+            //Dash implementation using easing function 
+            if (accumulatedTimeSinceLERPStart <= LERPDuration) // accumulatetime will be less then lerp 
+            {
+                accumulatedTimeSinceLERPStart += Time.deltaTime; 
+
+                // Step 1, pass the accumulated time to TimeFuntion to get the correct T value
+                float t = EasingFunctions.TimeFunction(accumulatedTimeSinceLERPStart, LERPDuration);
+
+                // Step 3, Use that T value to LERP and get the new postion
+                Vector3 newPostion = Vector3.Lerp(startPos, endPos, t);
+
+                // Step 4, override the existing position with the new position from the LERP
+                transform.position = newPostion;
+            }  
+            
+        }
+
+        if (Input.GetKeyUp(KeyCode.Q))
+        {
+            accumulatedTimeSinceLERPStart = 0;
+        }
 
         if (Input.GetButtonDown("Jump"))
         {
@@ -86,14 +141,30 @@ public class KinematicInput : MonoBehaviour
 
     void FixedUpdate()
     {
-        // Calculate horizontal movement
-        Vector3 movement = Vector3.right * input.x * speed * Time.deltaTime;
-        movement += Vector3.forward * input.y * speed * Time.deltaTime;
-        movement.y = 0.0f;
-        Vector3 targetPosition = rigidBody.position + movement;
+        //time += Time.fixedDeltaTime;
 
-        // Calculate Vertical movement
-        float targetHeight = 0.0f;
+        if (dash)
+        {
+            /*forceVector = transform.forward *( Force * time + (0.5f *drag *(time * time)));
+            rigidBody.MovePosition(transform.position + (forceVector * Time.fixedDeltaTime));
+            if (time >=3)
+            {
+                dash = false;
+            }    
+            */
+        }
+        else
+        {
+            // Calculate horizontal movement
+            movement = Vector3.right * input.x * speed * Time.deltaTime;
+            movement += Vector3.forward * input.y * speed * Time.deltaTime;
+            movement.y = 0.0f;
+            targetPosition = rigidBody.position + movement;
+
+            // Calculate Vertical movement
+            targetHeight = 0.0f;
+
+        }
 
         if (!isMovingUp && jumpStartRequest && isOnGround())
         {
@@ -110,8 +181,8 @@ public class KinematicInput : MonoBehaviour
             }
             else
             {
-                float currentYpos = rigidBody.position.y;
-                float newVerticalVelocity = maxJumpSpeed + gravityAcceleration * Time.deltaTime;
+                float currentYpos = rigidBody.position.y; //gets current y position 
+                float newVerticalVelocity = maxJumpSpeed + gravityAcceleration * Time.deltaTime; // applies gravity with maxJumpSpeed
                 targetHeight = currentYpos + (newVerticalVelocity * Time.deltaTime) + (0.5f * maxJumpSpeed * Time.deltaTime * Time.deltaTime);
 
                 currentJumpDuration += Time.deltaTime;
@@ -136,11 +207,11 @@ public class KinematicInput : MonoBehaviour
             }
             else
             {
-                float currentYpos = rigidBody.position.y;
+                float currentYpos = rigidBody.position.y; //setting float to have rigidbodys y position
                 float currentYvelocity = rigidBody.velocity.y;
 
-                float newVerticalVelocity = maxFallSpeed + gravityAcceleration * Time.deltaTime;
-                targetHeight = currentYpos + (newVerticalVelocity * Time.deltaTime) + (0.5f * maxFallSpeed * Time.deltaTime * Time.deltaTime);
+                float newVerticalVelocity = maxFallSpeed + gravityAcceleration * Time.deltaTime; //applying gravity 
+                targetHeight = currentYpos + (newVerticalVelocity * Time.deltaTime) + (0.5f * maxFallSpeed * Time.deltaTime * Time.deltaTime); //calculating targetheight for gravity fall speed
             }
         }
 
@@ -188,7 +259,7 @@ public class KinematicInput : MonoBehaviour
     void OnGUI()
     {
         // Add here any debug text that might be helpful for you
-        GUI.Label(new Rect(10, 10, 100, 20), "Angle " + angleDifferenceForward.ToString(), myGUIStyle);
+        //GUI.Label(new Rect(10, 10, 100, 20), "Angle " + angleDifferenceForward.ToString(), myGUIStyle);
     }
 
     private void OnDrawGizmos()
@@ -205,6 +276,5 @@ public class KinematicInput : MonoBehaviour
             Debug.DrawRay(contact.point, contact.normal * 10, Color.white);
         }
     }
-
 
 }

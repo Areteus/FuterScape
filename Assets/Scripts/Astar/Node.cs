@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-public class Node
+public class Node : MonoBehaviour
 {
     public bool walkable;
     public Vector3 worldPos;
@@ -28,5 +28,5 @@ public class Node
             return gCost + hCost; //dont need to assign to fcost we always get fcost by calculating g and h cost
         }
     }
-
 }
+
